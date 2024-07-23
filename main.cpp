@@ -5,14 +5,16 @@ Perifericos:
 
 botones:
     start:          BUTTON1 (PC13)
-    cambiar set_time: D4      (PB5)
+    subir set_time: D4      (PB5)
+    bajar set_time: D5      (PB4)
 
 LEDs:
-    leds set_time:    D0      (PA3)
-                    D1      (PA2)
-                    D2      (PA10)
+    leds set_time:  PB15
+                    PB14
+                    PB13
 
-    Motor           D3      (PB3)
+
+    Motor           PB1
 
 Analogico:
     Pote:           A0      (PA0)
@@ -25,22 +27,32 @@ programmer: Ariel Wels
 #include <cstdint>
 
 
+#define PUSH        0
+#define IDLE        1
+#define PWM_STEPS   99
+
 //instancio objetos de botones
 DigitalIn start_button(PC_13);
-DigitalIn time_button(PB_5);
+DigitalIn time_up_button(PB_5);
+DigitalIn time_down_button(PB_4);
 
 //instancio obj. entrada analogica
 AnalogIn speed_input(PA_0);
 
 //instancio objetos de leds
-DigitalOut led_time_0(PA_3);
-DigitalOut led_time_1(PA_2);
-DigitalOut led_time_2(PA_10);
+DigitalOut led_time_0(PB_15);
+DigitalOut led_time_1(PB_14);
+DigitalOut led_time_2(PB_13);
 
-DigitalOut motor(PB_3);
+DigitalOut motor(PB_1);
 
 //instancio uart driver
 UnbufferedSerial serial_port(USBTX, USBRX); //seria ideal limitar el scope a una biblioteca de manejo serial
+
+//return 0 if button down.
+bool deb_start_button(void);
+bool deb_time_up_button(void);
+bool deb_time_down_button(void);
 
 
 // to do: pasar un puntero a una estructura que contenga todo el estado del aparato para poder monitorear y modificar mas libremente
@@ -84,8 +96,10 @@ bool manage_serial(uint8_t vel, uint8_t tim){
 int main(void)
 {
     //habilito pullups
-    start_button.mode(PullUp); // este ya esta externo en la placa pero no molesta.
-    time_button.mode(PullUp);
+    start_button.mode(PullUp); // esta resistencia de pullup ya esta en la placa pero no molesta.
+    time_up_button.mode(PullUp);
+    time_down_button.mode(PullUp);
+
 
     //config de serial port
     // Set desired properties (9600-8-N-1).
@@ -130,21 +144,30 @@ int main(void)
 
 
         //leo la velocidad seteada
-        speed = speed_input * 99; // escalo a 0 a 255 para el pwm casero
+        speed = speed_input * PWM_STEPS; // escalo a 0 a PWM_STEPS para el pwm casero
 
         //espero a que se aprete boton de start para arrancar
-        if(start_button == 0 ){
+        if(deb_start_button() == PUSH ){
             //habilito a contar set_time
-            working=true;
+            working = !working ;
         }
-        //boton de cambio de tiempo seteado
-        if(time_button == 0){
-            //cambio set_time seteado
+        //botones de cambio de tiempo seteado
+        if(deb_time_up_button() == PUSH){
+            //Subo set_time seteado
             set_time++;
-            if(set_time >= 8 )
+            if(set_time >= 8 ){
                 set_time = 0;
+            }
         }
 
+        if(deb_time_down_button() == PUSH){
+            //Bajo set_time seteado
+            if(set_time != 0 ){
+                set_time--;
+            }else{
+                set_time = 8;
+            }
+        }
 
         //-----------------------------------------------------------------------------------
         //-----------------------------------------------------------------------------------
@@ -160,7 +183,8 @@ int main(void)
 
             motor = pwm_cnt < speed ? 0 : 1 ; //pwm :s
         }else{
-            motor=0;
+            motor = 0;
+            elapsed_time = 0;
         }
 
         //Si se acabo el tiempo apago (cuento en base a minutos, 60000 millisegundos)
@@ -228,4 +252,97 @@ int main(void)
 
 
     }
+}
+
+
+
+//----------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------
+
+#define BUTTON_TEST_NUM 100
+
+bool deb_start_button(void){
+
+static uint8_t button_cnt=0;
+static bool last_state_button = false;
+static bool actual_state_button = false;
+    //incremento un contador si esta pulsado
+    if(start_button == PUSH ){
+        button_cnt++;
+    }else{
+        button_cnt=0;
+    }
+
+    //guardo estado anterior del pulsador para detectar flanco
+    last_state_button = actual_state_button;
+
+    //detecto si estuvo apretado un tiempo sin rebotar
+    if(button_cnt > BUTTON_TEST_NUM){
+        actual_state_button = PUSH;
+    }else{
+        actual_state_button = IDLE;
+    }
+    
+    //detecto flanco y devuelvo si se detecto flanco de apretado (descendente en este caso)
+    if(actual_state_button == PUSH && last_state_button == IDLE){
+        return PUSH;
+    }
+    return IDLE;
+}
+bool deb_time_up_button(void){
+
+static uint8_t button_cnt=0;
+static bool last_state_button = false;
+static bool actual_state_button = false;
+    //incremento un contador si esta pulsado
+    if(time_up_button == PUSH){
+        button_cnt++;
+    }else{
+        button_cnt=0;
+    }
+
+    //guardo estado anterior del pulsador para detectar flanco
+    last_state_button = actual_state_button;
+
+    //detecto si estuvo apretado un tiempo sin rebotar
+    if(button_cnt > BUTTON_TEST_NUM){
+        actual_state_button = PUSH;
+    }else{
+        actual_state_button = IDLE;
+    }
+    
+    //detecto flanco y devuelvo si se detecto flanco de apretado (descendente en este caso)
+    if(actual_state_button == PUSH && last_state_button == IDLE){
+        return PUSH;
+    }
+    return IDLE;
+}
+bool deb_time_down_button(void){
+
+static uint8_t button_cnt=0;
+static bool last_state_button = false;
+static bool actual_state_button = false;
+    //incremento un contador si esta pulsado
+    if(time_down_button == PUSH){
+        button_cnt++;
+    }else{
+        button_cnt=0;
+    }
+
+    //guardo estado anterior del pulsador para detectar flanco
+    last_state_button = actual_state_button;
+
+    //detecto si estuvo apretado un tiempo sin rebotar
+    if(button_cnt > BUTTON_TEST_NUM){
+        actual_state_button = PUSH;
+    }else{
+        actual_state_button = IDLE;
+    }
+    
+    //detecto flanco y devuelvo si se detecto flanco de apretado (descendente en este caso)
+    if(actual_state_button == PUSH && last_state_button == IDLE){
+        return PUSH;
+    }
+    return IDLE;
 }
